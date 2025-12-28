@@ -40,11 +40,13 @@ io.on('connection', (socket) => {
     rooms[roomId] = room;
     socket.join(roomId);
     
-    console.log(`✅ Room ${roomId} created by ${username}`);
+    console.log(` Room ${roomId} created by ${username}`);
     console.log('Room data:', room);
     
     socket.emit('room-created', room);
   });
+
+
 
   socket.on('join-room', ({ roomId, username }) => {
     console.log(`User ${username} trying to join room ${roomId}`);
@@ -70,11 +72,56 @@ io.on('connection', (socket) => {
     
     socket.emit('room-joined', room);
     socket.to(roomId).emit('user-joined', newUser);
+    
+    // Send current video to the new joiner if one is loaded
+    if (room.videoUrl) {
+      socket.emit('video-url-changed', room.videoUrl);
+    }
   });
 
+
+
+
+  // socket.on('join-room', ({ roomId, username }) => {
+  //   console.log(`User ${username} trying to join room ${roomId}`);
+    
+  //   const room = rooms[roomId];
+    
+  //   if (!room) {
+  //     console.log(` Room ${roomId} not found!`);
+  //     socket.emit('error', 'Room not found');
+  //     return;
+  //   }
+
+  //   const newUser = { 
+  //     id: socket.id, 
+  //     username: username, 
+  //     isAdmin: false 
+  //   };
+    
+  //   room.users.push(newUser);
+  //   socket.join(roomId);
+
+  //   console.log(`✅ User ${username} joined room ${roomId}`);
+    
+  //   socket.emit('room-joined', room);
+  //   socket.to(roomId).emit('user-joined', newUser);
+  // });
+
+  // socket.on('video-url-change', ({ roomId, videoUrl }) => {
+  //   io.to(roomId).emit('video-url-changed', videoUrl);
+  // });
+
   socket.on('video-url-change', ({ roomId, videoUrl }) => {
+    const room = rooms[roomId];
+    if (room) {
+      room.videoUrl = videoUrl; // Save to room object
+      console.log(`📹 Video changed in room ${roomId}: ${videoUrl}`);
+    }
     io.to(roomId).emit('video-url-changed', videoUrl);
   });
+
+
 
   socket.on('play-video', ({ roomId, currentTime }) => {
     socket.to(roomId).emit('video-play', currentTime);
