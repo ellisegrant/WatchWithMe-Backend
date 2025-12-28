@@ -34,19 +34,19 @@ io.on('connection', (socket) => {
         username: username, 
         isAdmin: true 
       }],
-      videoUrl: ''
+      videoUrl: '',
+      isLocked: false,
+      mutedUsers: [],
+      playbackControl: 'everyone' // 'everyone' or 'admin-only'
     };
     
     rooms[roomId] = room;
     socket.join(roomId);
     
-    console.log(` Room ${roomId} created by ${username}`);
-    console.log('Room data:', room);
+    console.log(`✅ Room ${roomId} created by ${username}`);
     
     socket.emit('room-created', room);
   });
-
-
 
   socket.on('join-room', ({ roomId, username }) => {
     console.log(`User ${username} trying to join room ${roomId}`);
@@ -56,6 +56,13 @@ io.on('connection', (socket) => {
     if (!room) {
       console.log(`❌ Room ${roomId} not found!`);
       socket.emit('error', 'Room not found');
+      return;
+    }
+
+    // Check if room is locked
+    if (room.isLocked) {
+      console.log(`🔒 Room ${roomId} is locked`);
+      socket.emit('error', 'Room is locked. No new members allowed.');
       return;
     }
 
@@ -79,59 +86,179 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ADMIN CONTROLS
 
+  // Kick user
+  socket.on('kick-user', ({ roomId, userId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
 
+    // Check if requester is admin
+    if (socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can kick users');
+      return;
+    }
 
-  // socket.on('join-room', ({ roomId, username }) => {
-  //   console.log(`User ${username} trying to join room ${roomId}`);
+    // Find the user
+    const userIndex = room.users.findIndex(u => u.id === userId);
+    if (userIndex === -1) return;
+
+    const kickedUser = room.users[userIndex];
+    room.users.splice(userIndex, 1);
+
+    console.log(`👢 Admin kicked ${kickedUser.username} from room ${roomId}`);
+
+    // Notify the kicked user
+    io.to(userId).emit('kicked', { message: 'You have been removed from the room by the admin' });
     
-  //   const room = rooms[roomId];
-    
-  //   if (!room) {
-  //     console.log(` Room ${roomId} not found!`);
-  //     socket.emit('error', 'Room not found');
-  //     return;
-  //   }
+    // Notify others
+    socket.to(roomId).emit('user-left', kickedUser);
+    socket.emit('user-kicked', kickedUser);
+  });
 
-  //   const newUser = { 
-  //     id: socket.id, 
-  //     username: username, 
-  //     isAdmin: false 
-  //   };
-    
-  //   room.users.push(newUser);
-  //   socket.join(roomId);
+  // Mute/unmute user
+  socket.on('toggle-mute-user', ({ roomId, userId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
 
-  //   console.log(`✅ User ${username} joined room ${roomId}`);
-    
-  //   socket.emit('room-joined', room);
-  //   socket.to(roomId).emit('user-joined', newUser);
-  // });
+    // Check if requester is admin
+    if (socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can mute users');
+      return;
+    }
 
-  // socket.on('video-url-change', ({ roomId, videoUrl }) => {
-  //   io.to(roomId).emit('video-url-changed', videoUrl);
-  // });
+    const isMuted = room.mutedUsers.includes(userId);
+    
+    if (isMuted) {
+      // Unmute
+      room.mutedUsers = room.mutedUsers.filter(id => id !== userId);
+      console.log(`🔊 Admin unmuted user ${userId} in room ${roomId}`);
+    } else {
+      // Mute
+      room.mutedUsers.push(userId);
+      console.log(`🔇 Admin muted user ${userId} in room ${roomId}`);
+    }
+
+    // Notify everyone about the update
+    io.to(roomId).emit('room-updated', room);
+  });
+
+  // Lock/unlock room
+  socket.on('toggle-lock-room', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check if requester is admin
+    if (socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can lock the room');
+      return;
+    }
+
+    room.isLocked = !room.isLocked;
+    console.log(`🔒 Room ${roomId} ${room.isLocked ? 'locked' : 'unlocked'}`);
+
+    // Notify everyone
+    io.to(roomId).emit('room-updated', room);
+  });
+
+  // Transfer admin
+  socket.on('transfer-admin', ({ roomId, newAdminId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check if requester is admin
+    if (socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can transfer admin rights');
+      return;
+    }
+
+    // Find both users
+    const oldAdmin = room.users.find(u => u.id === socket.id);
+    const newAdmin = room.users.find(u => u.id === newAdminId);
+
+    if (!newAdmin) {
+      socket.emit('error', 'User not found');
+      return;
+    }
+
+    // Update admin status
+    if (oldAdmin) oldAdmin.isAdmin = false;
+    newAdmin.isAdmin = true;
+    room.admin = newAdminId;
+
+    console.log(`👑 Admin transferred from ${oldAdmin?.username} to ${newAdmin.username} in room ${roomId}`);
+
+    // Notify everyone
+    io.to(roomId).emit('room-updated', room);
+  });
+
+  // Toggle playback control
+  socket.on('toggle-playback-control', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check if requester is admin
+    if (socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can change playback control');
+      return;
+    }
+
+    room.playbackControl = room.playbackControl === 'everyone' ? 'admin-only' : 'everyone';
+    console.log(`🎮 Playback control in room ${roomId}: ${room.playbackControl}`);
+
+    // Notify everyone
+    io.to(roomId).emit('room-updated', room);
+  });
+
+  // VIDEO CONTROLS
 
   socket.on('video-url-change', ({ roomId, videoUrl }) => {
     const room = rooms[roomId];
     if (room) {
-      room.videoUrl = videoUrl; // Save to room object
+      room.videoUrl = videoUrl;
       console.log(`📹 Video changed in room ${roomId}: ${videoUrl}`);
     }
     io.to(roomId).emit('video-url-changed', videoUrl);
   });
 
-
-
   socket.on('play-video', ({ roomId, currentTime }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check playback permissions
+    if (room.playbackControl === 'admin-only' && socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can control playback');
+      return;
+    }
+
     socket.to(roomId).emit('video-play', currentTime);
   });
 
   socket.on('pause-video', ({ roomId, currentTime }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check playback permissions
+    if (room.playbackControl === 'admin-only' && socket.id !== room.admin) {
+      socket.emit('error', 'Only admin can control playback');
+      return;
+    }
+
     socket.to(roomId).emit('video-pause', currentTime);
   });
 
+  // CHAT
+
   socket.on('send-message', ({ roomId, message, username }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Check if user is muted
+    if (room.mutedUsers.includes(socket.id)) {
+      socket.emit('error', 'You have been muted by the admin');
+      return;
+    }
+
     const messageData = {
       id: Date.now() + Math.random(),
       username,
@@ -140,6 +267,8 @@ io.on('connection', (socket) => {
     };
     io.to(roomId).emit('new-message', messageData);
   });
+
+  // DISCONNECT
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
@@ -154,7 +283,18 @@ io.on('connection', (socket) => {
         
         socket.to(roomId).emit('user-left', user);
         
-        if (room.users.length === 0) {
+        // If admin left, transfer to first user or delete room
+        if (socket.id === room.admin) {
+          if (room.users.length > 0) {
+            room.admin = room.users[0].id;
+            room.users[0].isAdmin = true;
+            io.to(roomId).emit('room-updated', room);
+            console.log(`👑 Admin left. Transferred to ${room.users[0].username}`);
+          } else {
+            delete rooms[roomId];
+            console.log(`Room ${roomId} deleted`);
+          }
+        } else if (room.users.length === 0) {
           delete rooms[roomId];
           console.log(`Room ${roomId} deleted`);
         }
