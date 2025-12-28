@@ -4,20 +4,18 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 
 const app = express();
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
+app.use(cors());
+
+const server = createServer(app);
+const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST']
   }
 });
 
-app.use(cors());
+const rooms = {};
 
-// Store active rooms
-const rooms = new Map();
-
-// Generate random room ID
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
@@ -25,61 +23,57 @@ function generateRoomId() {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Create a new room
-  socket.on('create-room', (username) => {
+  socket.on('create-room', ({ username }) => {
     const roomId = generateRoomId();
     
     const room = {
       id: roomId,
       admin: socket.id,
-      users: [{
-        id: socket.id,
-        username: username,
-        isAdmin: true
-      }]
+      users: [{ 
+        id: socket.id, 
+        username: username, 
+        isAdmin: true 
+      }],
+      videoUrl: ''
     };
     
-    rooms.set(roomId, room);
+    rooms[roomId] = room;
     socket.join(roomId);
-    socket.roomId = roomId;
     
-    socket.emit('room-created', { roomId, room });
-    console.log(`Room ${roomId} created by ${username}`);
+    console.log(`✅ Room ${roomId} created by ${username}`);
+    console.log('Room data:', room);
+    
+    socket.emit('room-created', room);
   });
 
-  // Join existing room
   socket.on('join-room', ({ roomId, username }) => {
-    const room = rooms.get(roomId);
+    console.log(`User ${username} trying to join room ${roomId}`);
+    
+    const room = rooms[roomId];
     
     if (!room) {
-      socket.emit('error', { message: 'Room not found' });
+      console.log(`❌ Room ${roomId} not found!`);
+      socket.emit('error', 'Room not found');
       return;
     }
-    
-    const user = {
-      id: socket.id,
-      username: username,
-      isAdmin: false
+
+    const newUser = { 
+      id: socket.id, 
+      username: username, 
+      isAdmin: false 
     };
     
-    room.users.push(user);
+    room.users.push(newUser);
     socket.join(roomId);
-    socket.roomId = roomId;
+
+    console.log(`✅ User ${username} joined room ${roomId}`);
     
-    socket.emit('room-joined', { roomId, room });
-    socket.to(roomId).emit('user-joined', user);
-    
-    console.log(`${username} joined room ${roomId}`);
+    socket.emit('room-joined', room);
+    socket.to(roomId).emit('user-joined', newUser);
   });
 
-  // Video control events
   socket.on('video-url-change', ({ roomId, videoUrl }) => {
-    const room = rooms.get(roomId);
-    if (room && socket.id === room.admin) {
-      room.videoUrl = videoUrl;
-      io.to(roomId).emit('video-url-changed', videoUrl);
-      console.log(`Video URL changed in room ${roomId}: ${videoUrl}`);
-    }
+    io.to(roomId).emit('video-url-changed', videoUrl);
   });
 
   socket.on('play-video', ({ roomId, currentTime }) => {
@@ -90,44 +84,39 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('video-pause', currentTime);
   });
 
-  socket.on('seek-video', ({ roomId, currentTime }) => {
-    socket.to(roomId).emit('video-seek', currentTime);
-  });
-
-  // Chat events - NEW CODE HERE
   socket.on('send-message', ({ roomId, message, username }) => {
-    const timestamp = new Date().toISOString();
-    const chatMessage = {
-      id: Date.now(),
+    const messageData = {
+      id: Date.now() + Math.random(),
       username,
       message,
-      timestamp,
-      userId: socket.id
+      timestamp: new Date().toISOString()
     };
-    
-    io.to(roomId).emit('new-message', chatMessage);
-    console.log(`Message in room ${roomId} from ${username}: ${message}`);
+    io.to(roomId).emit('new-message', messageData);
   });
 
   socket.on('disconnect', () => {
-    if (socket.roomId) {
-      const room = rooms.get(socket.roomId);
-      if (room) {
-        room.users = room.users.filter(u => u.id !== socket.id);
+    console.log('User disconnected:', socket.id);
+
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      const userIndex = room.users.findIndex(u => u.id === socket.id);
+      
+      if (userIndex !== -1) {
+        const user = room.users[userIndex];
+        room.users.splice(userIndex, 1);
+        
+        socket.to(roomId).emit('user-left', user);
         
         if (room.users.length === 0) {
-          rooms.delete(socket.roomId);
-          console.log(`Room ${socket.roomId} deleted (empty)`);
-        } else {
-          io.to(socket.roomId).emit('user-left', socket.id);
+          delete rooms[roomId];
+          console.log(`Room ${roomId} deleted`);
         }
       }
     }
-    console.log('User disconnected:', socket.id);
   });
 });
 
 const PORT = 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
