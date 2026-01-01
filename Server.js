@@ -268,6 +268,26 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('new-message', messageData);
   });
 
+  // Typing indicators
+  socket.on('typing-start', ({ roomId, username }) => {
+    socket.to(roomId).emit('user-typing', { username });
+  });
+
+  socket.on('typing-stop', ({ roomId, username }) => {
+    socket.to(roomId).emit('user-stopped-typing', { username });
+  });
+
+  // Quick reactions
+  socket.on('send-reaction', ({ roomId, reaction, username }) => {
+    const reactionData = {
+      id: Date.now() + Math.random(),
+      username,
+      reaction,
+      timestamp: new Date().toISOString()
+    };
+    io.to(roomId).emit('new-reaction', reactionData);
+  });
+
   // DISCONNECT
 
   socket.on('disconnect', () => {
