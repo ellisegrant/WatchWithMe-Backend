@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -24,13 +25,18 @@ import {
   handleChangeVolume,
   handleAddBookmark,
   handleRemoveBookmark,
-  handleJumpToBookmark
+  handleJumpToBookmark,
+  handleVideoEnded
 } from './controllers/videoController.js';
 import { 
   handleSendMessage, 
   handleTyping, 
   handleReaction 
 } from './controllers/chatController.js';
+import { 
+  handleSearchYouTube, 
+  handleGetVideoDetails 
+} from './controllers/youtubeController.js';  // ADD THIS LINE
 
 const app = express();
 app.use(cors());
@@ -69,11 +75,16 @@ io.on('connection', (socket) => {
   handleAddBookmark(socket, io);
   handleRemoveBookmark(socket, io);
   handleJumpToBookmark(socket, io);
+  handleVideoEnded(socket, io);
 
   // Chat handlers
   handleSendMessage(socket, io);
   handleTyping(socket, io);
   handleReaction(socket, io);
+
+  // YouTube search handlers  // ADD THESE TWO LINES
+  handleSearchYouTube(socket);
+  handleGetVideoDetails(socket);
 
   // Disconnect handler
   socket.on('disconnect', () => {
@@ -110,3 +121,4 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+

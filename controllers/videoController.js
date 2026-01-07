@@ -5,11 +5,38 @@ export const handleVideoUrlChange = (socket, io) => {
     const room = roomManager.getRoom(roomId);
     if (room) {
       room.videoUrl = videoUrl;
-      console.log(`📹 Video changed in room ${roomId}: ${videoUrl}`);
+      room.currentVideoIndex = 0; // Reset to first video
+      console.log(` Video changed in room ${roomId}: ${videoUrl}`);
     }
     io.to(roomId).emit('video-url-changed', videoUrl);
   });
 };
+
+
+export const handleVideoEnded = (socket, io) => {
+  socket.on('video-ended', ({ roomId }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room) return;
+
+    // Check if there are videos in queue
+    if (room.queue && room.queue.length > 0) {
+      const nextVideo = room.queue.shift(); // Remove first video from queue
+      room.videoUrl = nextVideo.videoUrl;
+      
+      console.log(`⏭️ Auto-playing next video in room ${roomId}: ${nextVideo.title}`);
+      
+      io.to(roomId).emit('video-url-changed', nextVideo.videoUrl);
+      io.to(roomId).emit('queue-updated', room.queue);
+    } else {
+      console.log(`🏁 Queue finished in room ${roomId}`);
+      io.to(roomId).emit('queue-finished');
+    }
+  });
+};
+
+
+
+
 
 export const handlePlayVideo = (socket, io) => {
   socket.on('play-video', ({ roomId, currentTime }) => {
@@ -54,7 +81,7 @@ export const handleAddToQueue = (socket, io) => {
     };
 
     room.queue.push(queueItem);
-    console.log(`➕ Video added to queue in room ${roomId}`);
+    console.log(` Video added to queue in room ${roomId}`);
 
     io.to(roomId).emit('queue-updated', room.queue);
   });
@@ -80,7 +107,7 @@ export const handlePlayNext = (socket, io) => {
     const nextVideo = room.queue.shift();
     room.videoUrl = nextVideo.videoUrl;
 
-    console.log(`⏭️ Playing next video in room ${roomId}`);
+    console.log(` Playing next video in room ${roomId}`);
 
     io.to(roomId).emit('video-url-changed', nextVideo.videoUrl);
     io.to(roomId).emit('queue-updated', room.queue);
