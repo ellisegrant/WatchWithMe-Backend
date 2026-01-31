@@ -36,16 +36,37 @@ import {
 import { 
   handleSearchYouTube, 
   handleGetVideoDetails 
-} from './controllers/youtubeController.js';  // ADD THIS LINE
+} from './controllers/youtubeController.js';
 
 const app = express();
-app.use(cors());
+
+// Updated CORS configuration for production
+const corsOptions = {
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://jesley.vercel.app',
+    'https://*.vercel.app'
+  ],
+  methods: ['GET', 'POST'],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 
 const server = createServer(app);
+
+// Updated Socket.io CORS configuration
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST']
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://jesley.vercel.app',
+      'https://*.vercel.app'
+    ],
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -82,7 +103,7 @@ io.on('connection', (socket) => {
   handleTyping(socket, io);
   handleReaction(socket, io);
 
-  // YouTube search handlers  // ADD THESE TWO LINES
+  // YouTube search handlers
   handleSearchYouTube(socket);
   handleGetVideoDetails(socket);
 
@@ -103,7 +124,7 @@ io.on('connection', (socket) => {
           if (room.users.length > 0) {
             roomManager.transferAdmin(roomId, room.users[0].id);
             io.to(roomId).emit('room-updated', room);
-            console.log(`👑 Admin left. Transferred to ${room.users[0].username}`);
+            console.log(` Admin left. Transferred to ${room.users[0].username}`);
           } else {
             roomManager.deleteRoom(roomId);
             console.log(`Room ${roomId} deleted`);
@@ -119,6 +140,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(` Server running on port ${PORT}`);
 });
-
