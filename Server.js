@@ -40,14 +40,27 @@ import {
 
 const app = express();
 
-// Updated CORS configuration for production
+// CORS configuration with function to handle Vercel preview URLs
 const corsOptions = {
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'https://jesley.vercel.app',
-    'https://*.vercel.app'
-  ],
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://jesley.vercel.app'
+    ];
+    
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Allow Vercel preview URLs (any subdomain of vercel.app)
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST'],
   credentials: true
 };
@@ -56,15 +69,26 @@ app.use(cors(corsOptions));
 
 const server = createServer(app);
 
-// Updated Socket.io CORS configuration
+// Socket.io CORS configuration
 const io = new Server(server, {
   cors: {
-    origin: [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://jesley.vercel.app',
-      'https://*.vercel.app'
-    ],
+    origin: function (origin, callback) {
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://jesley.vercel.app'
+      ];
+      
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -124,7 +148,7 @@ io.on('connection', (socket) => {
           if (room.users.length > 0) {
             roomManager.transferAdmin(roomId, room.users[0].id);
             io.to(roomId).emit('room-updated', room);
-            console.log(` Admin left. Transferred to ${room.users[0].username}`);
+            console.log(`Admin left. Transferred to ${room.users[0].username}`);
           } else {
             roomManager.deleteRoom(roomId);
             console.log(`Room ${roomId} deleted`);
@@ -140,5 +164,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(` Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
